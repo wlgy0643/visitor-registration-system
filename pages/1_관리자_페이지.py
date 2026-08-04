@@ -129,6 +129,24 @@ st.divider()
 
 st.subheader("검색 및 필터")
 
+DEFAULT_APPLIED_FILTERS = {
+    "date_start": None,
+    "date_end": None,
+    "name": "",
+    "company": "",
+    "vehicle": "",
+    "host_name": "",
+    "purpose": [],
+    "department": [],
+    "location": [],
+}
+
+# "화면에 입력 중인 값"과 "마지막으로 조회 버튼을 눌러 확정한 값"을 분리해서 관리한다.
+# 위젯(키 filter_*)을 아무리 바꿔도, 아래에서 실제 조회에 쓰이는 것은
+# applied_filters 뿐이므로 조회 버튼을 누르기 전에는 표가 바뀌지 않는다.
+if "applied_filters" not in st.session_state:
+    st.session_state["applied_filters"] = DEFAULT_APPLIED_FILTERS.copy()
+
 
 def unique_sorted_values(series: pd.Series) -> list:
     """실제 데이터에 존재하는 값만 정렬해서 선택지로 반환한다. (빈 값 제외)"""
@@ -139,34 +157,65 @@ purpose_options = unique_sorted_values(log_df["visit_purpose"])
 department_options = unique_sorted_values(log_df["host_department"])
 location_options = unique_sorted_values(log_df["visit_location"])
 
-date_col1, date_col2 = st.columns(2)
-with date_col1:
-    date_start = st.date_input("방문일자 시작", value=None, key="filter_date_start")
-with date_col2:
-    date_end = st.date_input("방문일자 종료", value=None, key="filter_date_end")
+st.date_input(
+    "방문기간",
+    value=(),
+    key="filter_date_range",
+)
+st.caption("시작일과 종료일을 포함한 기간의 방문 기록을 조회합니다.")
 
 text_col1, text_col2, text_col3, text_col4 = st.columns(4)
 with text_col1:
-    name_query = st.text_input("방문객 성명", key="filter_name")
+    st.text_input("방문객 성명", key="filter_name")
 with text_col2:
-    company_query = st.text_input("회사명", key="filter_company")
+    st.text_input("회사명", key="filter_company")
 with text_col3:
-    vehicle_query = st.text_input("차량번호", key="filter_vehicle")
+    st.text_input("차량번호", key="filter_vehicle")
 with text_col4:
-    host_name_query = st.text_input("사내 담당자", key="filter_host_name")
+    st.text_input("사내 담당자", key="filter_host_name")
 
 select_col1, select_col2, select_col3 = st.columns(3)
 with select_col1:
-    purpose_selected = st.multiselect("방문 목적", options=purpose_options, key="filter_purpose")
+    st.multiselect("방문 목적", options=purpose_options, key="filter_purpose")
 with select_col2:
-    department_selected = st.multiselect("담당 부서", options=department_options, key="filter_department")
+    st.multiselect("담당 부서", options=department_options, key="filter_department")
 with select_col3:
-    location_selected = st.multiselect("방문 장소", options=location_options, key="filter_location")
+    st.multiselect("방문 장소", options=location_options, key="filter_location")
 
-if st.button("필터 초기화"):
+button_col1, button_col2, button_spacer = st.columns([1, 1, 6])
+with button_col1:
+    query_clicked = st.button("조회", type="primary", width="stretch")
+with button_col2:
+    reset_clicked = st.button("필터 초기화", width="stretch")
+
+if query_clicked:
+    draft_date_range = st.session_state.get("filter_date_range") or ()
+
+    if len(draft_date_range) == 1:
+        st.error("방문기간의 종료일까지 선택해주세요.")
+    elif len(draft_date_range) == 2 and draft_date_range[0] > draft_date_range[1]:
+        st.error("방문일자 시작이 종료일보다 늦습니다. 날짜를 다시 확인해주세요.")
+    else:
+        if len(draft_date_range) == 2:
+            new_date_start, new_date_end = draft_date_range
+        else:
+            new_date_start, new_date_end = None, None
+
+        st.session_state["applied_filters"] = {
+            "date_start": new_date_start,
+            "date_end": new_date_end,
+            "name": st.session_state.get("filter_name", "").strip(),
+            "company": st.session_state.get("filter_company", "").strip(),
+            "vehicle": st.session_state.get("filter_vehicle", "").strip(),
+            "host_name": st.session_state.get("filter_host_name", "").strip(),
+            "purpose": list(st.session_state.get("filter_purpose", [])),
+            "department": list(st.session_state.get("filter_department", [])),
+            "location": list(st.session_state.get("filter_location", [])),
+        }
+
+if reset_clicked:
     for key in (
-        "filter_date_start",
-        "filter_date_end",
+        "filter_date_range",
         "filter_name",
         "filter_company",
         "filter_vehicle",
@@ -176,6 +225,7 @@ if st.button("필터 초기화"):
         "filter_location",
     ):
         st.session_state.pop(key, None)
+    st.session_state["applied_filters"] = DEFAULT_APPLIED_FILTERS.copy()
     st.rerun()
 
 
@@ -187,23 +237,26 @@ def contains_ci(series: pd.Series, query: str) -> pd.Series:
     return series.str.lower().str.contains(query, na=False, regex=False)
 
 
+# 아래부터는 항상 "마지막으로 조회 버튼을 눌렀을 때 확정된 조건"만 사용한다.
+applied = st.session_state["applied_filters"]
+
 filtered_df = log_df.copy()
-filtered_df = filtered_df[contains_ci(filtered_df["visitor_name"], name_query)]
-filtered_df = filtered_df[contains_ci(filtered_df["visitor_company"], company_query)]
-filtered_df = filtered_df[contains_ci(filtered_df["vehicle_number"], vehicle_query)]
-filtered_df = filtered_df[contains_ci(filtered_df["host_name"], host_name_query)]
+filtered_df = filtered_df[contains_ci(filtered_df["visitor_name"], applied["name"])]
+filtered_df = filtered_df[contains_ci(filtered_df["visitor_company"], applied["company"])]
+filtered_df = filtered_df[contains_ci(filtered_df["vehicle_number"], applied["vehicle"])]
+filtered_df = filtered_df[contains_ci(filtered_df["host_name"], applied["host_name"])]
 
-if purpose_selected:
-    filtered_df = filtered_df[filtered_df["visit_purpose"].isin(purpose_selected)]
-if department_selected:
-    filtered_df = filtered_df[filtered_df["host_department"].isin(department_selected)]
-if location_selected:
-    filtered_df = filtered_df[filtered_df["visit_location"].isin(location_selected)]
+if applied["purpose"]:
+    filtered_df = filtered_df[filtered_df["visit_purpose"].isin(applied["purpose"])]
+if applied["department"]:
+    filtered_df = filtered_df[filtered_df["host_department"].isin(applied["department"])]
+if applied["location"]:
+    filtered_df = filtered_df[filtered_df["visit_location"].isin(applied["location"])]
 
-if date_start:
-    filtered_df = filtered_df[filtered_df["registered_at_dt"].dt.date >= date_start]
-if date_end:
-    filtered_df = filtered_df[filtered_df["registered_at_dt"].dt.date <= date_end]
+if applied["date_start"]:
+    filtered_df = filtered_df[filtered_df["registered_at_dt"].dt.date >= applied["date_start"]]
+if applied["date_end"]:
+    filtered_df = filtered_df[filtered_df["registered_at_dt"].dt.date <= applied["date_end"]]
 
 st.divider()
 
