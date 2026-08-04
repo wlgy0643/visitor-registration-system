@@ -1,0 +1,5 @@
+recipient_id,name,department,email
+R001,김관리,관리팀,manager1@example.com
+R002,이보안,보안팀,security1@example.com
+R003,박운영,운영팀,operation1@example.com
+R004,최담당,경영지원부,support1@example.com

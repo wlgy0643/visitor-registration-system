@@ -1,0 +1,24 @@
+# 실제 계정정보/환경변수 (비밀번호, API 키 등)
+.env
+.streamlit/secrets.toml
+
+# 방문 기록 (개인정보 포함 - 실제 운영 데이터는 절대 커밋하지 않습니다)
+visitor_log.csv
+
+# 실제(더미가 아닌) 직원 명단 파일을 별도로 만들어 쓸 경우 예시
+employees.csv
+employees_real.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS/에디터 관련
+.DS_Store
+Thumbs.db
+
+# 방문객 서명 이미지
+signatures/
+
